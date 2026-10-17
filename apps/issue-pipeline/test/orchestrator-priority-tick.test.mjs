@@ -200,10 +200,12 @@ test("a malformed priority key fails the tick, naming the key", () => {
   assert.throws(() => tick(loadConfig(malformed), DEPS), NAMES_PRIORITY);
 });
 
-test("with no priority key a tick reads no board and warns of nothing", () => {
-  openWith(UNBOARDED);
-  const { lines, warnings } = tickWith(CONFIG);
-  assert.deepEqual(lines, AS_TODAY);
-  assert.deepEqual(warnings, []);
-  assert.equal(graphqlCalls(), 0);
+test("with no priority key, or a null one as repos/example.json has, a tick reads no board and warns of nothing", () => {
+  for (const configPath of [CONFIG, configWith({ priority: null })]) {
+    openWith(UNBOARDED);
+    const { lines, warnings } = tickWith(configPath);
+    assert.deepEqual(lines, AS_TODAY, configPath);
+    assert.deepEqual(warnings, [], configPath);
+    assert.equal(graphqlCalls(), 0, configPath);
+  }
 });
