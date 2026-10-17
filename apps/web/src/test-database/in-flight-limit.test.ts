@@ -14,6 +14,8 @@ const ONE_RUNNING_TWO_HELD = 3;
 interface HeldWork {
   // Whether the limit has started the work.
   readonly started: () => boolean;
+  // How many times the limit has run the work.
+  readonly runs: () => number;
   // What the limit returned for the work.
   readonly done: Promise<string>;
   readonly finish: (value: string) => void;
@@ -30,9 +32,11 @@ function holdWork(
   let peak = 0;
   const works = Array.from({ length: count }, (): HeldWork => {
     let started = false;
+    const calls = { runs: 0 };
     const { promise, resolve, reject } = Promise.withResolvers<string>();
     const done = limit(async (): Promise<string> => {
       started = true;
+      calls.runs += 1;
       inFlight += 1;
       peak = Math.max(peak, inFlight);
       try {
@@ -43,6 +47,7 @@ function holdWork(
     });
     return {
       started: (): boolean => started,
+      runs: (): number => calls.runs,
       done,
       finish: resolve,
       fail: reject,
@@ -95,13 +100,14 @@ describe("an in-flight limit", () => {
     ]);
   });
 
-  test("frees the slot of work that fails, and passes its error on", async () => {
+  test("runs work that fails once, frees its slot, and passes its error on", async () => {
     const { works } = holdWork(inFlightLimit(ONE_AT_A_TIME), ONE_AT_A_TIME + 1);
     const error = new Error("refused");
 
     workAt(works, 0).fail(error);
 
     await expect(workAt(works, 0).done).rejects.toBe(error);
+    expect(workAt(works, 0).runs()).toBe(1);
     expect(workAt(works, 1).started()).toBe(true);
   });
 
