@@ -1,27 +1,21 @@
 ## Behaviour
 
-Paths are relative to `apps/web/`.
+Paths are relative to `apps/web/`. Items 3-7 describe `inFlightLimit(limit)` in `src/test-database/in-flight-limit.ts`.
 
-1. **One named bound.** `src/test-database/request-bound.ts` exports `TEST_DATABASE_MAX_IN_FLIGHT` (8). Its comment says that the bound stays under the test database's Neon proxy pool per endpoint (8 in the pipeline's per-issue proxy). It also says why: the proxy answers HTTP 500 "Too many connections to this endpoint" instead of queueing a request beyond that pool. The same file derives `SERVER_TEST_WORKERS` and `REQUESTS_PER_WORKER = Math.floor(TEST_DATABASE_MAX_IN_FLIGHT / SERVER_TEST_WORKERS)`, so one edit changes both. `REQUESTS_PER_WORKER` is at least 1. The file imports nothing.
-2. **A fixed worker count.** The server project's `test.maxWorkers` in `vitest.server.config.mts` is the number `SERVER_TEST_WORKERS`, whatever the machine's core count. `SERVER_TEST_WORKERS × REQUESTS_PER_WORKER ≤ TEST_DATABASE_MAX_IN_FLIGHT`.
-3. **The in-flight limit.** `inFlightLimit(limit)` returns a function that runs async work:
-   - 3a. While fewer than `limit` pieces of work are in flight, it starts new work at once, in the same call.
-   - 3b. Work beyond the limit waits, and never more than `limit` pieces run at once. It starts when an earlier piece ends, by the time the ended piece's promise settles.
-   - 3c. Held work starts in the order it was given (first in, first out).
-   - 3d. Work that rejects frees its slot, and the returned promise rejects with the same error.
-   - 3e. The returned promise settles with what the work returns.
-   - It uses no timers and never retries.
-4. **Every server test worker stays within its share.** In every server test, the Neon HTTP driver's requests (everything `getDb()` sends, the kit's cleanup included) go through one `inFlightLimit(REQUESTS_PER_WORKER)` per worker. A test that starts more queries at once than that waits for a free slot. All of its queries succeed, and at most `REQUESTS_PER_WORKER` of them are in flight at the global `fetch` at once. A request is in flight from when it is sent until its reply's body has been read. The limited request calls whatever the global `fetch` is when it is sent, so a server test that stubs `fetch` (`src/manual/update-manual.server.test.ts:87`) still sees the driver's requests and its own fetches. Fetches made other than through the Neon driver are not limited.
-5. **Only the server tests change.** Production code (`src/db/client.ts` and everything under `src/` except `src/test-database/`), `vitest.config.mts`, `npm test`, and the `dev` and `build` scripts are unchanged.
-6. **Documented for later parts.** The server-test section of `apps/web/AGENTS.md` (lines 10-16) has a bullet with four facts:
-   - The bound is `TEST_DATABASE_MAX_IN_FLIGHT`, in `src/test-database/request-bound.ts`.
-   - The worker count and the per-worker limit derive from it.
-   - The setup file applies the limit to every test database request over HTTP.
-   - Later parts of the e2e migration (#341) must not raise the bound or send test database requests around the limit, and must not retry on the proxy's 500.
-7. `npm run check` and `npm run test:server` pass.
+1. **One named bound.** `src/test-database/request-bound.ts` exports `TEST_DATABASE_MAX_IN_FLIGHT` (8), with a comment saying that the bound stays under the test database's Neon proxy pool per endpoint (8 in the pipeline's per-issue proxy) because the proxy answers HTTP 500 "Too many connections to this endpoint" instead of queueing a request beyond that pool. The same file derives `SERVER_TEST_WORKERS` and `REQUESTS_PER_WORKER = Math.floor(TEST_DATABASE_MAX_IN_FLIGHT / SERVER_TEST_WORKERS)` from it, so one edit changes both; `REQUESTS_PER_WORKER` is at least 1, and the file imports nothing.
+2. **A fixed worker count.** The server project's `test.maxWorkers` in `vitest.server.config.mts` is the number `SERVER_TEST_WORKERS`, whatever the machine's core count, and `SERVER_TEST_WORKERS × REQUESTS_PER_WORKER ≤ TEST_DATABASE_MAX_IN_FLIGHT`.
+3. **Under the limit, work starts at once.** While fewer than `limit` pieces of work are in flight, the function that `inFlightLimit(limit)` returns starts new work at once, in the same call.
+4. **Beyond the limit, work waits.** Work beyond the limit waits, so never more than `limit` pieces run at once, and it starts when an earlier piece ends, by the time the ended piece's promise settles, with no timer.
+5. **First in, first out.** Held work starts in the order it was given.
+6. **Failures free their slot.** Work that rejects is run once, with no retry, frees its slot, and the returned promise rejects with the same error.
+7. **Results pass through.** The returned promise settles with what the work returns.
+8. **Every server test worker stays within its share.** In every server test, the Neon HTTP driver's requests (everything `getDb()` sends, the kit's cleanup included) go through one `inFlightLimit(REQUESTS_PER_WORKER)` per worker: a test that starts more queries at once than that waits for a free slot, all of its queries succeed, and at most `REQUESTS_PER_WORKER` of them are in flight at the global `fetch` at once, from when each is sent until its reply's body has been read. The limited request calls whatever the global `fetch` is when it is sent, so a server test that stubs `fetch` (`src/manual/update-manual.server.test.ts:87`) still sees the driver's requests and its own fetches, and fetches made other than through the Neon driver are not limited.
+9. **Documented for later parts.** The server-test section of `apps/web/AGENTS.md` (lines 10-16) has a bullet saying that the bound is `TEST_DATABASE_MAX_IN_FLIGHT` in `src/test-database/request-bound.ts`, that the worker count and the per-worker limit derive from it, that the setup file applies the limit to every test database request over HTTP, and that later parts of the e2e migration (#341) must not raise the bound, send test database requests around the limit, or retry on the proxy's 500.
+10. **The checks pass.** `npm run check` and `npm run test:server` pass.
 
 ## Out of scope
 
+- Production code (`src/db/client.ts` and everything under `src/` except `src/test-database/`), `vitest.config.mts`, `npm test`, and the `dev` and `build` scripts stay unchanged. Only the server tests' setup and config change.
 - The WebSocket pools from `openPool` (`src/db/keep-data-through-update.server.test.ts:150`, `src/manual/update-manual.server.test.ts:112` and the reindex in `src/manual/reindex-manual.ts:18`) stay outside the HTTP limit. See Assumptions and risks.
 - The Playwright e2e suite, its worker count (`playwright.config.ts`) and the unit and browser projects in `vitest.config.mts`.
 - `compose.test-db.yml` and the proxy's own settings.
@@ -42,7 +36,7 @@ Paths are relative to `apps/web/`.
    - The setup file runs before each test file in its worker, and a worker runs one file at a time. So each worker has one limiter at a time, and setting the field again replaces the wrapper rather than stacking a second one.
    - The global `fetch` stays unwrapped, so git's stubbed `fetch` in `update-manual.server.test.ts:87` is not limited.
    - Write the wrapper in the setup file, or in a small kit module beside it if the setup file would pass 300 lines. Don't change `src/db/client.ts`.
-4. **`apps/web/AGENTS.md`.** Add the bullet in Behaviour 6 to the server-test list, after "Keep server tests fast" (:16).
+4. **`apps/web/AGENTS.md`.** Add the bullet in Behaviour 9 to the server-test list, after "Keep server tests fast" (:16).
 
 **Design it twice** (CONTRIBUTING, Design).
 
@@ -64,30 +58,32 @@ Paths are relative to `apps/web/`.
 
 ## Test interfaces
 
-- `inFlightLimit(limit)`, a function in `src/test-database/in-flight-limit.ts` (new): Behaviour 3a-3e.
+- `inFlightLimit(limit)`, a function in `src/test-database/in-flight-limit.ts` (new): Behaviour 3-7.
 - `TEST_DATABASE_MAX_IN_FLIGHT`, `SERVER_TEST_WORKERS` and `REQUESTS_PER_WORKER`, config constants in `src/test-database/request-bound.ts` (new): Behaviour 1 and 2.
 - The server Vitest config, the default export of `vitest.server.config.mts` (changed): `test.maxWorkers`, Behaviour 2.
-- The server-test setup, `vitest.server-setup.ts`, a module (changed), driven through `getDb()` in a server test: Behaviour 4.
+- The server-test setup, `vitest.server-setup.ts`, a module (changed), driven through `getDb()` in a server test: Behaviour 8.
+- The server-test guidance in `apps/web/AGENTS.md:10-16` (changed): Behaviour 9, checked by review.
+- `npm run check` and `npm run test:server`, the repo's scripts (existing): Behaviour 10, run at acceptance.
 
 ## Tests
 
 All three files fail today because the behaviour is missing, not because of an import, syntax or type error. Biome and `tsc` pass on them.
 
 - **`src/test-database/in-flight-limit.test.ts`** (new; unit project, `// @vitest-environment node`, runs in `npm test` and `npm run check`). It drives `inFlightLimit`, using held work that the test resolves or rejects itself, with no timers. Today every test fails with the stub's "inFlightLimit is not implemented yet (#399)" error. All five pass against a reference limiter (tried locally, then removed).
-  - "starts work at once while under the limit": 3a.
-  - "holds work beyond the limit until earlier work ends": 3b, with N + 1 calls, peak equal to N, and the extra call starting when the first ends.
-  - "starts held work in the order it was given": 3c.
-  - "frees the slot of work that fails, and passes its error on": 3d.
-  - "returns what each piece of work returns": 3e.
+  - "starts work at once while under the limit": Behaviour 3.
+  - "holds work beyond the limit until earlier work ends": Behaviour 4, with N + 1 calls, peak equal to N, and the extra call started by the time the first one's promise settles (a limiter that started it on a timer would fail this check).
+  - "starts held work in the order it was given": Behaviour 5.
+  - "runs work that fails once, frees its slot, and passes its error on": Behaviour 6, with the failed work's run count at 1.
+  - "returns what each piece of work returns": Behaviour 7.
 - **`vitest.server.config.test.ts`** (extended; unit project). It drives the server config's default export and the constants.
   - "run in a fixed number of workers, whatever the machine": Behaviour 2. It fails today with `expected undefined to be 4`.
   - "stay within the test database's limit across every worker": Behaviour 2, `maxWorkers × REQUESTS_PER_WORKER ≤ TEST_DATABASE_MAX_IN_FLIGHT`. It fails today because `maxWorkers` is not a number.
-  - "leave each worker at least one request in flight": Behaviour 1. It guards the derived constant against a deadlock and passes on the stub, because the stub holds the constants' final values.
+  - "leave each worker at least one request in flight": Behaviour 1. It guards the derived constant against a deadlock and passes on the stub, because the stub holds the constants' final values. The comment and the import-free file in Behaviour 1 are checked by review.
 - **`src/test-database/request-bound.server.test.ts`** (new; server project, `npm run test:server`). It drives the setup file through `getDb()`.
-  - "a test's queries started together wait for a free request slot": Behaviour 4. It stubs the global `fetch` with a counter around the real one and runs `3 × REQUESTS_PER_WORKER` `select 1` queries at once. Every query must succeed, all of them must reach the global `fetch`, and the peak in flight must be at most `REQUESTS_PER_WORKER`.
+  - "a test's queries started together wait for a free request slot": Behaviour 8. It stubs the global `fetch` with a counter around the real one and runs `3 × REQUESTS_PER_WORKER` `select 1` queries at once. Every query must succeed, all of them must reach the global `fetch`, and the peak in flight must be at most `REQUESTS_PER_WORKER`.
   - It fails today with `expected 6 to be less than or equal to 2`. It was run against a reset test database of its own.
   - With a reference limiter and wiring, it passed together with `src/test-database/` and `update-manual.server.test.ts` (13 tests), and was then removed.
-- Behaviour 5, 6 and 7 are checked by review and by `npm run check` and `npm run test:server` at acceptance. There is no load reproduction (the issue's Tests).
+- Behaviour 9 is checked by review, and Behaviour 10 by running `npm run check` and `npm run test:server` once at acceptance. There is no load reproduction (the issue's Tests).
 
 ## Wiki updates
 
@@ -97,7 +93,7 @@ All three files fail today because the behaviour is missing, not because of an i
 ## Assumptions and risks
 
 - **The proxy's limit of 8.** The issue gives the per-issue proxy's pool of 8. The error text matches Neon's proxy (`TooManyConnections`, https://github.com/neondatabase/neon/blob/8f60b04d/proxy/src/auth/mod.rs). The pool is per endpoint (https://github.com/neondatabase/neon/blob/8f60b04d/proxy/src/serverless/conn_pool_lib.rs). The repo itself doesn't state the 8.
-- **WebSocket pools.** `openPool`'s WebSocket connections, used by two scratch-database tests and the reindex they run, are not counted. Whether the proxy counts them against the same endpoint limit is unverified. Bounding them would mean changing production `openPool` or `reindexManual`, which Behaviour 5 forbids. They are recorded in the wiki decision as outside the limit. If they turn out to trip the 500, a follow-up can lower `SERVER_TEST_WORKERS` to leave headroom, or give the scratch tests a smaller pool.
+- **WebSocket pools.** `openPool`'s WebSocket connections, used by two scratch-database tests and the reindex they run, are not counted. Whether the proxy counts them against the same endpoint limit is unverified. Bounding them would mean changing production `openPool` or `reindexManual`, which the Out of scope list rules out (production code stays unchanged). They are recorded in the wiki decision as outside the limit. If they turn out to trip the 500, a follow-up can lower `SERVER_TEST_WORKERS` to leave headroom, or give the scratch tests a smaller pool.
 - **Suite time.** The suite may take longer with 4 workers instead of cores − 1. Each test's own queries queue only within its worker, so the 40 000 ms `SERVER_TEST_TIMEOUT_MS` still covers a test (`web-tests-under-load`).
 - **CLI override.** A `--maxWorkers` flag on the command line would override the config. No script passes one.
 - **Other proxies.** Several pipeline lanes may each run a suite against the shared proxy on port 4444. The bound is per suite, as the issue scopes it, and the per-issue proxies are separate.
