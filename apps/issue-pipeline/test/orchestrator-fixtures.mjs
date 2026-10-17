@@ -29,7 +29,8 @@ const SETTINGS = {
 const CAPPED = { ...SETTINGS, maxJobs: CAPPED_JOBS };
 
 // An issue's facts with none of its own: at triage with no stopped stage,
-// stub files, changed files, PR, after mark, job or prerequisite, unstacked.
+// stub files, changed files, PR, after mark, job, prerequisite or priority,
+// unstacked.
 const BLANK = {
   stage: "triage",
   stoppedStage: null,
@@ -41,6 +42,7 @@ const BLANK = {
   job: null,
   stackedOn: null,
   prereq: null,
+  priority: null,
 };
 
 // The facts a fixture sets: an issue's stub files (the `where` of its `new`
@@ -60,9 +62,10 @@ function issue(fields) {
   };
 }
 
-/** @param {SnapshotIssue[]} issues @param {number} [spentLastHour] @returns {Snapshot} */
-function snapshotOf(issues, spentLastHour = 0) {
-  return { issues, spentLastHour };
+// The issues, as read with no priority board unless `prioritized` (#393).
+/** @param {SnapshotIssue[]} issues @param {number} [spentLastHour] @param {boolean} [prioritized] @returns {Snapshot} */
+function snapshotOf(issues, spentLastHour = 0, prioritized = false) {
+  return { issues, spentLastHour, prioritized };
 }
 
 const LIVE_JOB = { live: true, stage: "implement" };

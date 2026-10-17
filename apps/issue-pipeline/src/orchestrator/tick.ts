@@ -3,8 +3,7 @@
 // jobs and write the escalations (#235), ask the escalation agent about them
 // (#282), decide with the scheduler, hold every start during a backoff, start
 // the jobs it chose, log every action and decision, then close the split
-// parents that are done (#378). The processes, the steers, the agent's run
-// and the clock come from the caller.
+// parents that are done (#378). The caller gives the processes and clock.
 
 import { z } from "zod";
 import type { Config } from "../config.ts";
@@ -132,8 +131,7 @@ function stopOf(action: WatchAction & { action: "stopped" }): {
 }
 
 // Carries out one watchdog action, and notes its effect on `issue`: a
-// restarted job is live, a stopped issue is stopped. A held restart does
-// nothing; the tick leaves its issue to a later tick.
+// restarted job is live, a stopped issue is stopped. A held restart waits.
 function act(
   run: TickRun,
   action: WatchAction,
@@ -234,11 +232,12 @@ function withoutHeld(
   return decisions.filter(({ issue }) => !waiting.has(issue));
 }
 
-// What a tick did: the scheduler's decisions, and what became of each open
-// split parent, for which the scheduler makes no decision.
+// What a tick did: its decisions, what became of each open split parent
+// (#378), and what it went on without, such as an unreadable board (#393).
 interface TickResult {
   decisions: Decision[];
   parents: ParentOutcome[];
+  warnings: string[];
 }
 
 // Runs one tick and returns what it did.
@@ -253,8 +252,9 @@ function tick(cfg: Config, deps: TickDeps): TickResult {
   );
   ledger.record(jobs, now);
   const spentLastHour = ledger.spentLastHour(now);
+  const snapshot = { issues, spentLastHour, prioritized: false };
   const backoff = openBackoff(cfg, jobs, now);
-  const admit = backoff.gate(startGate({ issues, spentLastHour }, settings));
+  const admit = backoff.gate(startGate(snapshot, settings));
   const watchdog = watch(watched, readWatchMemory(cfg), {
     ...WATCH_SETTINGS.parse(cfg),
     now,
@@ -275,7 +275,7 @@ function tick(cfg: Config, deps: TickDeps): TickResult {
     const view = { watched, states, admit, now };
     const advice = adviceOf(run, issues, view);
     escalateOpenIssues(cfg, { issues, labels }, watchdog.memory, advice);
-    const scheduled = schedule({ issues, spentLastHour }, settings, now);
+    const scheduled = schedule(snapshot, settings, now);
     decisions = backoff.hold(withoutHeld(scheduled, done));
     for (const decision of decisions) {
       if (decision.action === "started") {
@@ -293,7 +293,7 @@ function tick(cfg: Config, deps: TickDeps): TickResult {
     split.map(({ number }) => number),
     now,
   );
-  return { decisions, parents };
+  return { decisions, parents, warnings: [] };
 }
 
 export type { TickDeps, TickResult };

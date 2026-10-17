@@ -189,7 +189,11 @@ test("saved files and a files line are ignored: implements start or wait by thei
     },
   ]);
   const { issues } = readQueue(cfg, [], NOW);
-  const decided = schedule({ issues, spentLastHour: 0 }, SETTINGS, SCHEDULE_NOW)
+  const decided = schedule(
+    { issues, spentLastHour: 0, prioritized: false },
+    SETTINGS,
+    SCHEDULE_NOW,
+  )
     .filter(({ stage }) => stage === "implement")
     .map(({ issue, action, reason }) => `#${issue} ${action} ${reason}`);
   assert.deepEqual(decided, [

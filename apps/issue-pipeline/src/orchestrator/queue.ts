@@ -47,6 +47,9 @@ type Prereq =
   | { number: number; status: "merged" }
   | { number: number; status: "closed-unmerged" };
 
+// An issue's priority on the repo's Projects board (#393).
+type Tier = "urgent" | "high" | "medium" | "low";
+
 // The issue's stage job: whether it runs, and the stage it began.
 interface IssueJob {
   live: boolean;
@@ -72,10 +75,14 @@ interface SnapshotIssue {
   job: IssueJob | null;
   stackedOn: StackedOn | null;
   prereq: Prereq | null;
+  // Its tier on the board, or null with none.
+  priority: Tier | null;
 }
 
 interface Snapshot {
   issues: readonly SnapshotIssue[];
+  // True when the issues' tiers were read from the repo's board.
+  prioritized: boolean;
   // The tokens the jobs spent in the last hour (the ledger's count).
   spentLastHour: number;
 }
@@ -268,6 +275,7 @@ export type {
   SnapshotIssue,
   StackedOn,
   StartReason,
+  Tier,
 };
 export {
   awaitsPrereq,

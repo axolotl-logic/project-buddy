@@ -33,7 +33,7 @@ const JOB = {
 const PR = 70;
 const CLOSED = 99;
 // An issue's facts with none of its own: no stopped stage, stub files,
-// changed files, PR, after mark, stop, job, stack or prerequisite.
+// changed files, PR, after mark, stop, job, stack, prerequisite or priority.
 const BASE = {
   stoppedStage: null,
   stubs: [],
@@ -44,6 +44,7 @@ const BASE = {
   job: null,
   stackedOn: null,
   prereq: null,
+  priority: null,
 };
 // The fresh issue as the after issue's prerequisite: open, with no state.
 const FRESH_PREREQ = {

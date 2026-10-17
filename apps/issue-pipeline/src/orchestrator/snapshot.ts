@@ -145,6 +145,7 @@ function issueOf(
     job: jobOf(status, running, start),
     stackedOn: state?.stackedOn ?? null,
     prereq: null,
+    priority: null,
   };
   if (status === null) {
     return { issue, watched: null, state };
