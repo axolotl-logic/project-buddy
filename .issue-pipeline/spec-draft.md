@@ -9,7 +9,6 @@
 7. **Nothing preempted, holds stand.** A live job of a lower tier keeps running and gets no decision. The global and stage caps, the rate limit, `after:#M` holds, stacking holds and the `files-overlap:#M` gate apply to every tier unchanged.
 8. **Reasons.** A start whose issue has a tier gets the reason `<reason>:priority-<tier>`, both in its `Decision` and in its `orchestrator.log` line, for example `free:priority-high`, `lifted:priority-high` or `merge-first:priority-low`. A start with no tier keeps the bare `free`, `merge-first` or `lifted`. Held reasons don't change.
 9. **Unreadable board.** If the board can't be read, the tick returns exactly one warning in `TickResult.warnings`, naming the board (`<owner>/<number>`), and schedules as if the key were unset (as in item 1, with no tier suffix and no shuffle). This covers gh exiting non-zero (a missing `read:project` scope, a network error), a reply that isn't JSON, and a reply without the board (`projectV2: null`). `orchestrate` writes each warning to stderr as `orchestrate: <warning>`, and the tick goes on.
-10. **Docs.** `apps/issue-pipeline/README.md` gets two changes: its orchestrator row names `priority.ts` and the tier order, and its token note (`:46`) says the token needs the `read:project` scope when `priority` is set. The wiki changes are under "Wiki updates".
 
 ## Out of scope
 
@@ -49,7 +48,7 @@
   - The file is at 300 lines, so move a helper out, such as `jobArgv`/`startJob` or `stopOf`, to make room.
 - `src/orchestrate.ts`: `tickOnce` (`:116`) writes each `warnings` entry to stderr as `orchestrate: <warning>\n`. This stays a thin adapter, as it does for a tick that fails.
 - `repos/example.json`: add `"priority": null` beside the orchestrator keys (`:31-41`).
-- `README.md` (app): the orchestrator row (`:16`) and the token note (`:46`).
+- `apps/issue-pipeline/README.md`: the orchestrator row (`:16`) names `priority.ts` and the tier order, and the token note (`:46`) says the token needs the `read:project` scope when `priority` is set. These are docs, so no test drives them; the wiki changes are under "Wiki updates".
 
 **Why `prioritized`.** The scheduler must tell "board read, this issue has no tier" from "no board". Without a board, item 1 promises today's order, with no shuffle of new issues. With a board read, the no-tier group is the last tier and is seeded too, as the issue's "if no lows then unlabeled" asks.
 
@@ -74,10 +73,10 @@
 
 ## Test interfaces
 
-- **`priority` config key** (config, new; `apps/issue-pipeline/src/orchestrator/priority.ts`). The shape is `"priority": { "project": "<owner>/<number>", "field"?: string } | null`, driven through `tick`.
-- **`tick(cfg, deps)`** (function, changed; `apps/issue-pipeline/src/orchestrator/tick.ts:244`). It returns `{ decisions, parents, warnings: string[] }` and writes `orchestrator.log`.
-- **`schedule(snapshot, settings, now)`** (function, changed; `apps/issue-pipeline/src/orchestrator/schedule.ts:255`). `snapshot` now carries `prioritized` and each issue's `priority`.
-- **`mergeRank(issues)`** (function, changed; `apps/issue-pipeline/src/orchestrator/queue.ts:239`).
+- **`priority` config key** (config, new; `apps/issue-pipeline/src/orchestrator/priority.ts`). The shape is `"priority": { "project": "<owner>/<number>", "field"?: string } | null`, driven through `tick`. Checks items 1 and 2.
+- **`tick(cfg, deps)`** (function, changed; `apps/issue-pipeline/src/orchestrator/tick.ts:244`). It returns `{ decisions, parents, warnings: string[] }` and writes `orchestrator.log`. Checks items 1, 2, 3, 8 and 9.
+- **`schedule(snapshot, settings, now)`** (function, changed; `apps/issue-pipeline/src/orchestrator/schedule.ts:255`). `snapshot` now carries `prioritized` and each issue's `priority`. Checks items 1, 3, 4, 5, 7 and 8.
+- **`mergeRank(issues)`** (function, changed; `apps/issue-pipeline/src/orchestrator/queue.ts:239`). Checks items 6 and 8.
 
 ## Tests
 
@@ -108,7 +107,7 @@ All tests use `node:test` `.mjs` under `apps/issue-pipeline/test/` and run in `m
 
 **Fixture changes** (already committed): `orchestrator-fixtures.mjs` (`priority: null` in BLANK; `snapshotOf(issues, spent, prioritized)`), `orchestrator-priority-fixtures.mjs` (shared helpers), and `orchestrator-snapshot.test.mjs` / `orchestrator-snapshot-stubs.test.mjs` (the new fields). Existing assertions are unchanged, because unconfigured reasons keep their format.
 
-**Untested glue.** `orchestrate.ts`'s stderr line (item 9's last sentence) and the README text (item 10) are a thin adapter and docs. No test drives `orchestrate.ts`'s loop today.
+**Untested glue.** `orchestrate.ts`'s stderr line (item 9's last sentence) and the README text (Design) are a thin adapter and docs. No test drives `orchestrate.ts`'s loop today.
 
 ## Wiki updates
 
